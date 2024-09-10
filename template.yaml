@@ -1,0 +1,275 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: SAM template for validation server engine 
+
+Parameters:
+  Stage:
+    Type: String
+    Default: stg
+
+Globals: 
+  Function: 
+    VpcConfig:
+      SubnetIds:
+       - subnet-954d68bf
+      SecurityGroupIds:
+       - sg-0017cb2b4c011e16f
+    Environment: 
+      Variables: 
+        S3_BUCKET_NAME: !Sub "sdt-validation-server-${Stage}" 
+        TASK_QUEUE_NAME: !Sub "sdt-validation-server-TaskQueue-${Stage}"
+        JOB_TIMEOUT_SECS: 1020 
+        SES_SENDER: validationserver@urban.org 
+
+Resources:
+  ValidatorFunction: 
+      Type: AWS::Serverless::Function
+      Properties: 
+        FunctionName: !Sub "sdt-validation-server-validator-${Stage}" 
+        MemorySize: 2048
+        Timeout: 180
+        PackageType: Image
+        ImageConfig: 
+          Command: ["validator.lambda_handler"]
+        Role: !GetAtt LambdaExecutionRole.Arn
+      Metadata:
+        DockerTag: python3.9-rpy2-v1
+        DockerContext: ./functions
+        Dockerfile: Dockerfile 
+
+  DispatcherFunction: 
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Sub "sdt-validation-server-dispatcher-${Stage}" 
+      MemorySize: 2048
+      Timeout: 180
+      PackageType: Image
+      ImageConfig: 
+        Command: ["dispatcher.lambda_handler"]
+      Role: !GetAtt LambdaExecutionRole.Arn
+    Metadata:
+      DockerTag: python3.9-rpy2-v1
+      DockerContext: ./functions
+      Dockerfile: Dockerfile 
+
+  WorkerFunction: 
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Sub "sdt-validation-server-worker-${Stage}" 
+      MemorySize: 2048
+      Timeout: 900
+      PackageType: Image
+      ImageConfig: 
+        Command: ["worker.lambda_handler"]
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events: 
+        SQSTask: 
+          Type: SQS
+          Properties: 
+            Queue: !GetAtt TaskQueue.Arn
+            BatchSize: 1 
+    Metadata:
+      DockerTag: python3.9-rpy2-v1
+      DockerContext: ./functions
+      Dockerfile: Dockerfile 
+
+  CombinerFunction: 
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Sub "sdt-validation-server-combiner-${Stage}" 
+      MemorySize: 512
+      Timeout: 180
+      PackageType: Image
+      ImageConfig: 
+        Command: ["combiner.lambda_handler"]
+      Role: !GetAtt LambdaExecutionRole.Arn
+    Metadata:
+      DockerTag: python3.9-rpy2-v1
+      DockerContext: ./functions
+      Dockerfile: Dockerfile 
+
+  SanitizerFunction: 
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Sub "sdt-validation-server-sanitizer-${Stage}" 
+      MemorySize: 512
+      Timeout: 180
+      PackageType: Image
+      ImageConfig: 
+        Command: ["sanitizer.lambda_handler"]
+      Role: !GetAtt LambdaExecutionRole.Arn
+    Metadata:
+      DockerTag: python3.9-rpy2-v1
+      DockerContext: ./functions
+      Dockerfile: Dockerfile 
+
+  MonitorFunction: 
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Sub "sdt-validation-server-monitor-${Stage}" 
+      MemorySize: 512
+      Timeout: 180
+      PackageType: Image
+      ImageConfig: 
+        Command: ["monitor.lambda_handler"]
+      Role: !GetAtt LambdaExecutionRole.Arn
+    Metadata:
+      DockerTag: python3.9-rpy2-v1
+      DockerContext: ./functions
+      Dockerfile: Dockerfile 
+
+  ErrorFunction: 
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Sub "sdt-validation-server-error-${Stage}" 
+      MemorySize: 512
+      Timeout: 180
+      PackageType: Image
+      ImageConfig: 
+        Command: ["error.lambda_handler"]
+      Role: !GetAtt LambdaExecutionRole.Arn
+    Metadata:
+      DockerTag: python3.9-rpy2-v1
+      DockerContext: ./functions
+      Dockerfile: Dockerfile 
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "sdt-validation-server-engine-role-${Stage}" 
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [lambda.amazonaws.com]
+          Action: 
+            - sts:AssumeRole
+      Path: /
+      Policies: 
+        - PolicyName: !Sub "sdt-validation-server-policy-${Stage}"  
+          PolicyDocument: 
+            Version: '2012-10-17'
+            Statement: 
+            - Effect: Allow
+              Action: s3:* 
+              Resource: 
+                - !Sub "arn:aws:s3:::sdt-validation-server-${Stage}"
+                - !Sub "arn:aws:s3:::sdt-validation-server-${Stage}/*"
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: 'arn:aws:logs:*:*:*'
+            - Effect: Allow 
+              Action: sqs:*
+              Resource: !GetAtt TaskQueue.Arn
+            - Effect: Allow 
+              Action: states:*
+              Resource: !Sub "arn:aws:states:us-east-1:672001523455:stateMachine:sdt-validation-server-statemachine-stg"
+            - Effect: Allow
+              Action: 
+                - kms:Decrypt
+                - kms:GenerateDataKey
+              Resource: 'arn:aws:kms:::key/503a5918-cd87-4a47-b39b-ae658aa3bc46'
+            - Effect: Allow 
+              Action: secretsmanager:GetSecretValue
+              Resource: 'arn:aws:secretsmanager:us-east-1:672001523455:secret:sdt-validation-server-engine-LyGHiy'
+            - Effect: Allow
+              Action: 
+                - ec2:DescribeNetworkInterfaces
+                - ec2:CreateNetworkInterface
+                - ec2:DeleteNetworkInterface
+              Resource: '*'
+            - Effect: Allow
+              Action: 
+                - ses:SendEmail
+                - ses:SendRawEmail 
+              Resource: '*'
+
+  SrcBucket: 
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Sub "sdt-validation-server-${Stage}" 
+      # BucketEncryption:
+      #   ServerSideEncryptionConfiguration:
+      #     - ServerSideEncryptionByDefault:
+      #         SSEAlgorithm: 'aws:kms'
+      #         KMSMasterKeyID: 'arn:aws:kms:::key/503a5918-cd87-4a47-b39b-ae658aa3bc46'
+      LifecycleConfiguration:
+        Rules:
+          - Id: Rule for data subsets 
+            Prefix: subsets/
+            Status: Enabled
+            ExpirationInDays: 7
+          - Id: Rule for intermediate worker results 
+            Prefix: intermediate/
+            Status: Enabled
+            ExpirationInDays: 7
+
+  PublicBucket: 
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Sub "sdt-validation-server-public-access" 
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+  
+  PublicBucketPolicy: 
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PublicBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Action: 
+              - "s3:GetObject"
+            Resource: 
+              - !Join ['/', [!GetAtt [PublicBucket, Arn], 'data/cps_2022-2023.csv']]
+              - !Join ['/', [!GetAtt [PublicBucket, Arn], 'codebooks/cps_2022-2023_codebook.txt']]
+            Principal: "*"    
+
+  JobLifecycleStateMachine: 
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub "sdt-validation-server-statemachine-${Stage}"
+      DefinitionUri: statemachines/statemachine.asl.json
+      DefinitionSubstitutions: 
+        ValidateFunctionArn: !GetAtt ValidatorFunction.Arn
+        DispatchFunctionArn: !GetAtt DispatcherFunction.Arn
+        MonitorFunctionArn: !GetAtt MonitorFunction.Arn
+        CombinerFunctionArn: !GetAtt CombinerFunction.Arn 
+        SanitizerFunctionArn: !GetAtt SanitizerFunction.Arn 
+        ErrorFunctionArn: !GetAtt ErrorFunction.Arn 
+      Policies: 
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ValidatorFunction
+        - LambdaInvokePolicy: 
+            FunctionName: !Ref DispatcherFunction 
+        - LambdaInvokePolicy:
+            FunctionName: !Ref MonitorFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CombinerFunction
+        - LambdaInvokePolicy: 
+            FunctionName: !Ref SanitizerFunction 
+        - LambdaInvokePolicy: 
+            FunctionName: !Ref ErrorFunction
+
+  TaskQueue: 
+    Type: AWS::SQS::Queue 
+    Properties: 
+      QueueName: !Sub "sdt-validation-server-TaskQueue-${Stage}"
+      MessageRetentionPeriod: 86400 
+      VisibilityTimeout: 900 
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  DeadLetterQueue: 
+    Type: AWS::SQS::Queue 
+    Properties: 
+      QueueName: !Sub "sdt-validation-server-DeadLetterQueue-${Stage}"

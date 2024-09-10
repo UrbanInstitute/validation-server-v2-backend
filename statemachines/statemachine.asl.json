@@ -1,0 +1,109 @@
+{
+  "Comment": "Orchestrates a validation server job submsision",
+  "StartAt": "ErrorHandler",
+  "TimeoutSeconds": 900, 
+  "States": {
+    "ErrorHandler": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Validate",
+          "States": {
+            "Validate": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${ValidateFunctionArn}",
+                "Payload.$": "$"
+              },
+              "OutputPath": "$.Payload",
+              "Next": "Dispatch"
+            },
+            "Dispatch": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${DispatchFunctionArn}",
+                "Payload.$": "$"
+              },
+              "OutputPath": "$.Payload",
+              "Next": "Monitor"
+            },
+            "Monitor": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${MonitorFunctionArn}",
+                "Payload.$": "$"
+              },
+              "OutputPath": "$.Payload",
+              "Next": "Done"
+            },
+            "Done": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.completed",
+                  "BooleanEquals": true,
+                  "Next": "Combine"
+                }
+              ],
+              "Default": "Wait"
+            },
+            "Wait": {
+              "Type": "Wait",
+              "Seconds": 30,
+              "Next": "Monitor"
+            },
+            "Combine": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${CombinerFunctionArn}",
+                "Payload.$": "$"
+              },
+              "OutputPath": "$.Payload",
+              "Next": "Sanitize"
+            },
+            "Sanitize": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${SanitizerFunctionArn}",
+                "Payload.$": "$"
+              },
+              "OutputPath": "$.Payload",
+              "End": true
+            }
+          }
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "Handle Failure"
+        }
+      ],
+      "Next": "Job Succeeded"
+    },
+    "Job Succeeded": {
+      "Type": "Succeed"
+    },
+    "Handle Failure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ErrorFunctionArn}",
+        "Payload.$": "$"
+      },
+      "OutputPath": "$.Payload",
+      "Next": "Job Failed"
+    },
+    "Job Failed": {
+      "Type": "Fail"
+    }
+  }
+}

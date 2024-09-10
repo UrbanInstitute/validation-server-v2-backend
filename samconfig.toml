@@ -1,0 +1,27 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "sdt-validation-server-engine"
+s3_prefix = "sdt-validation-server-engine"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+fail_on_empty_changeset = false
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1xv5r18rdnc4j"
+image_repositories = [
+    "ValidatorFunction=672001523455.dkr.ecr.us-east-1.amazonaws.com/sdt-validation-server-engine", 
+    "DispatcherFunction=672001523455.dkr.ecr.us-east-1.amazonaws.com/sdt-validation-server-engine", 
+    "WorkerFunction=672001523455.dkr.ecr.us-east-1.amazonaws.com/sdt-validation-server-engine", 
+    "CombinerFunction=672001523455.dkr.ecr.us-east-1.amazonaws.com/sdt-validation-server-engine", 
+    "SanitizerFunction=672001523455.dkr.ecr.us-east-1.amazonaws.com/sdt-validation-server-engine", 
+    "MonitorFunction=672001523455.dkr.ecr.us-east-1.amazonaws.com/sdt-validation-server-engine", 
+    "ErrorFunction=672001523455.dkr.ecr.us-east-1.amazonaws.com/sdt-validation-server-engine"
+    ]
+tags = [
+    "Project-Code=102623-0001-003-00001",
+    "Project-Name=Task1-Infrastructure",
+    "Center=Tech", 
+    "Tech-Team=RP", 
+    "Created-By=ETyagi", 
+    "Requested-By=ETyagi"
+    ] 
